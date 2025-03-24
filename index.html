@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accelerometer Data Visualization</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f7f9fc;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            padding: 25px;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        .last-update {
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .card {
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            transition: transform 0.2s;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        .card h2 {
+            margin-top: 0;
+            font-size: 18px;
+            color: #34495e;
+            border-bottom: 2px solid #ecf0f1;
+            padding-bottom: 10px;
+        }
+        .value {
+            font-size: 28px;
+            font-weight: bold;
+            margin: 15px 0;
+        }
+        .x-value { color: #e74c3c; }
+        .y-value { color: #2ecc71; }
+        .z-value { color: #3498db; }
+        
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-bottom: 30px;
+        }
+        
+        .data-table-container {
+            margin-top: 40px;
+            overflow-x: auto;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e1e1e1;
+        }
+        
+        th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        tr:hover {
+            background-color: #f5f7fa;
+        }
+        
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #e1e1e1;
+        }
+        
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            background-color: #f8f9fa;
+            border: 1px solid #e1e1e1;
+            border-bottom: none;
+            margin-right: 5px;
+            border-radius: 5px 5px 0 0;
+        }
+        
+        .tab.active {
+            background-color: white;
+            border-bottom: 2px solid white;
+            font-weight: bold;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 18px;
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Accelerometer Data Visualization</h1>
+            <div class="last-update" id="last-update">Last updated: Loading...</div>
+        </header>
+
+        <div class="dashboard">
+            <div class="card">
+                <h2>X-Axis Acceleration</h2>
+                <div class="value x-value" id="x-value">--.--</div>
+                <div>m/s²</div>
+            </div>
+            <div class="card">
+                <h2>Y-Axis Acceleration</h2>
+                <div class="value y-value" id="y-value">--.--</div>
+                <div>m/s²</div>
+            </div>
+            <div class="card">
+                <h2>Z-Axis Acceleration</h2>
+                <div class="value z-value" id="z-value">--.--</div>
+                <div>m/s²</div>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" data-tab="combined">Combined View</div>
+            <div class="tab" data-tab="individual">Individual Axes</div>
+            <div class="tab" data-tab="data">Raw Data</div>
+        </div>
+
+        <div class="tab-content active" id="combined-tab">
+            <div class="chart-container">
+                <canvas id="combinedChart"></canvas>
+            </div>
+        </div>
+
+        <div class="tab-content" id="individual-tab">
+            <div class="chart-container">
+                <canvas id="xChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <canvas id="yChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <canvas id="zChart"></canvas>
+            </div>
+        </div>
+
+        <div class="tab-content" id="data-tab">
+            <div class="data-table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>X (m/s²)</th>
+                            <th>Y (m/s²)</th>
+                            <th>Z (m/s²)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="data-table-body">
+                        <tr>
+                            <td colspan="4" class="loading">Loading data...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyBwvytl7j4LnZOm02JHiiUsRufKYYtZnfQ",
+            authDomain: "accelodata.firebaseapp.com",
+            databaseURL: "https://accelodata-default-rtdb.firebaseio.com",
+            projectId: "accelodata",
+            storageBucket: "accelodata.appspot.com",
+            messagingSenderId: "209315312698",
+            appId: "1:209315312698:web:482c7c7ce3a7b2c6a889e0"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+        
+        // Tab functionality
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                
+                tab.classList.add('active');
+                document.getElementById(`${tab.dataset.tab}-tab`).classList.add('active');
+                
+                // Refresh charts when tab is clicked to fix rendering issues
+                window.dispatchEvent(new Event('resize'));
+            });
+        });
+
+        // Chart configuration
+        const MAX_DATA_POINTS = 50;
+        const CHART_OPTIONS = {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: {
+                duration: 300
+            },
+            scales: {
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Acceleration (m/s²)'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Time'
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top',
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                }
+            }
+        };
+
+        // Initialize combined chart
+        const combinedChartCtx = document.getElementById('combinedChart').getContext('2d');
+        const combinedChart = new Chart(combinedChartCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'X-Axis',
+                        data: [],
+                        borderColor: '#e74c3c',
+                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        fill: false
+                    },
+                    {
+                        label: 'Y-Axis',
+                        data: [],
+                        borderColor: '#2ecc71',
+                        backgroundColor: 'rgba(46, 204, 113, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        fill: false
+                    },
+                    {
+                        label: 'Z-Axis',
+                        data: [],
+                        borderColor: '#3498db',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        fill: false
+                    }
+                ]
+            },
+            options: CHART_OPTIONS
+        });
+
+        // Initialize individual charts
+        const xChartCtx = document.getElementById('xChart').getContext('2d');
+        const xChart = new Chart(xChartCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'X-Axis',
+                    data: [],
+                    borderColor: '#e74c3c',
+                    backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: true
+                }]
+            },
+            options: {
+                ...CHART_OPTIONS,
+                plugins: {
+                    ...CHART_OPTIONS.plugins,
+                    title: {
+                        display: true,
+                        text: 'X-Axis Acceleration',
+                        font: {
+                            size: 16
+                        }
+                    }
+                }
+            }
+        });
+
+        const yChartCtx = document.getElementById('yChart').getContext('2d');
+        const yChart = new Chart(yChartCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Y-Axis',
+                    data: [],
+                    borderColor: '#2ecc71',
+                    backgroundColor: 'rgba(46, 204, 113, 0.1)',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: true
+                }]
+            },
+            options: {
+                ...CHART_OPTIONS,
+                plugins: {
+                    ...CHART_OPTIONS.plugins,
+                    title: {
+                        display: true,
+                        text: 'Y-Axis Acceleration',
+                        font: {
+                            size: 16
+                        }
+                    }
+                }
+            }
+        });
+
+        const zChartCtx = document.getElementById('zChart').getContext('2d');
+        const zChart = new Chart(zChartCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Z-Axis',
+                    data: [],
+                    borderColor: '#3498db',
+                    backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: true
+                }]
+            },
+            options: {
+                ...CHART_OPTIONS,
+                plugins: {
+                    ...CHART_OPTIONS.plugins,
+                    title: {
+                        display: true,
+                        text: 'Z-Axis Acceleration',
+                        font: {
+                            size: 16
+                        }
+                    }
+                }
+            }
+        });
+
+        // Format timestamp for display
+        function formatTime(timestamp) {
+            if (!timestamp) return '';
+            const parts = timestamp.split(' ');
+            return parts.length > 1 ? parts[1] : timestamp;
+        }
+
+        // Listen for new data from Firebase
+        database.ref('accelerometer').limitToLast(MAX_DATA_POINTS).on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (!data) {
+                document.getElementById('last-update').textContent = 'No data available';
+                return;
+            }
+            
+            // Convert Firebase object to array and sort by timestamp
+            const entries = Object.entries(data).map(([key, value]) => ({
+                key,
+                ...value
+            })).sort((a, b) => {
+                return new Date(a.timestamp) - new Date(b.timestamp);
+            });
+            
+            // Update charts with the data
+            updateCharts(entries);
+            
+            // Update dashboard with latest values
+            updateDashboard(entries[entries.length - 1]);
+            
+            // Update data table
+            updateDataTable(entries);
+            
+            // Update last update time
+            document.getElementById('last-update').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+        });
+
+        function updateCharts(entries) {
+            // Prepare data for charts
+            const labels = entries.map(entry => formatTime(entry.timestamp));
+            const xData = entries.map(entry => entry.x);
+            const yData = entries.map(entry => entry.y);
+            const zData = entries.map(entry => entry.z);
+            
+            // Update combined chart
+            combinedChart.data.labels = labels;
+            combinedChart.data.datasets[0].data = xData;
+            combinedChart.data.datasets[1].data = yData;
+            combinedChart.data.datasets[2].data = zData;
+            combinedChart.update();
+            
+            // Update individual charts
+            xChart.data.labels = labels;
+            xChart.data.datasets[0].data = xData;
+            xChart.update();
+            
+            yChart.data.labels = labels;
+            yChart.data.datasets[0].data = yData;
+            yChart.update();
+            
+            zChart.data.labels = labels;
+            zChart.data.datasets[0].data = zData;
+            zChart.update();
+        }
+
+        function updateDashboard(latestEntry) {
+            if (!latestEntry) return;
+            
+            document.getElementById('x-value').textContent = latestEntry.x.toFixed(2);
+            document.getElementById('y-value').textContent = latestEntry.y.toFixed(2);
+            document.getElementById('z-value').textContent = latestEntry.z.toFixed(2);
+        }
+
+        function updateDataTable(entries) {
+            const tableBody = document.getElementById('data-table-body');
+            tableBody.innerHTML = '';
+            
+            // Display in reverse order (newest first)
+            entries.slice().reverse().forEach(entry => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${entry.timestamp}</td>
+                    <td class="x-value">${entry.x.toFixed(2)}</td>
+                    <td class="y-value">${entry.y.toFixed(2)}</td>
+                    <td class="z-value">${entry.z.toFixed(2)}</td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+    </script>
+</body>
+</html>
